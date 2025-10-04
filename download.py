@@ -243,7 +243,7 @@ if __name__ == "__main__":
                     master.update(1)
 
     # Write missing PMCIDs to file (always produce the log, may be empty)
-    missing_file = os.path.join(OUTPUT_DIR, "missing_pmcids.txt")
+    missing_file = "missing_pmcids.txt"
     try:
         with open(missing_file, "w", encoding="utf-8") as mf:
             mf.write(f"# Missing PMCIDs - generated: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
@@ -254,4 +254,4 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"Failed to write missing PMCIDs file: {e}")
 
-    print(f"\nDone. Success: {ok_count} | Failed: {fail_count} | Output: {os.path.abspath(OUTPUT_DIR)}")
+    print(f"\nDone. Success: {ok_count} | Failed: {fail_count} | Output: {os.path.abspath(missing_file)}")
