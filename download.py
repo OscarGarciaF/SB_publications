@@ -18,16 +18,23 @@ OA_API_SUFFIX = "&tool=pmc-oa-downloader&email=you@example.com"
 HEADERS = {"User-Agent": "PMC-OA-Downloader/1.1 (+you@example.com)"}
 MAX_RETRIES = 3
 RETRY_SLEEP = 2  # seconds
+
+# New: max concurrent requests
+MAX_CONCURRENT = 5
 # --------------------------
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
+# New: shared session for connection pooling across threads
+SESSION = requests.Session()
+SESSION.headers.update(HEADERS)
+
 def _http_get(url, stream=False, timeout=30):
-    """GET with simple retries."""
+    """GET with simple retries using shared session."""
     last_err = None
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            r = requests.get(url, headers=HEADERS, stream=stream, timeout=timeout)
+            r = SESSION.get(url, stream=stream, timeout=timeout)
             r.raise_for_status()
             return r
         except Exception as e:
@@ -190,6 +197,9 @@ def load_pmcids(csv_path):
             unique.append(p)
     return unique
 
+# Add concurrency imports and config
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 if __name__ == "__main__":
     try:
         pmcids = load_pmcids(CSV_FILE)
@@ -199,20 +209,49 @@ if __name__ == "__main__":
 
     ok_count = 0
     fail_count = 0
+    # New: collect missing PMCIDs
+    missing_pmcids = []
+
+    # Prepare list skipping already-downloaded files to reduce submitted tasks
+    to_process = []
+    for pmcid in pmcids:
+        out_pdf = os.path.join(OUTPUT_DIR, f"{pmcid.upper()}.pdf")
+        if os.path.exists(out_pdf) and os.path.getsize(out_pdf) > 0:
+            print(f"[{pmcid}] Skipped (already downloaded).")
+            ok_count += 1
+        else:
+            to_process.append(pmcid)
 
     with tqdm(total=len(pmcids), desc="Overall", unit="article") as master:
-        for pmcid in pmcids:
-            # Skip quickly if file already exists to keep the bar snappy
-            out_pdf = os.path.join(OUTPUT_DIR, f"{pmcid.upper()}.pdf")
-            if os.path.exists(out_pdf) and os.path.getsize(out_pdf) > 0:
-                print(f"[{pmcid}] Skipped (already downloaded).")
-                ok_count += 1
-                master.update(1)
-                continue
+        # advance the bar for already-skipped items
+        master.update(len(pmcids) - len(to_process))
 
-            ok = download_pmc_pdf(pmcid)
-            ok_count += int(ok)
-            fail_count += int(not ok)
-            master.update(1)
+        if to_process:
+            with ThreadPoolExecutor(max_workers=MAX_CONCURRENT) as ex:
+                future_to_pmc = {ex.submit(download_pmc_pdf, pmcid): pmcid for pmcid in to_process}
+                for fut in as_completed(future_to_pmc):
+                    pmcid = future_to_pmc[fut]
+                    try:
+                        ok = fut.result()
+                    except Exception as e:
+                        print(f"[{pmcid}] Exception in worker: {e}")
+                        ok = False
+                    if not ok:
+                        missing_pmcids.append(pmcid)
+                    ok_count += int(bool(ok))
+                    fail_count += int(not ok)
+                    master.update(1)
+
+    # Write missing PMCIDs to file (always produce the log, may be empty)
+    missing_file = os.path.join(OUTPUT_DIR, "missing_pmcids.txt")
+    try:
+        with open(missing_file, "w", encoding="utf-8") as mf:
+            mf.write(f"# Missing PMCIDs - generated: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+            mf.write(f"# Requested: {len(pmcids)}  Succeeded: {ok_count}  Failed: {fail_count}\n")
+            for p in missing_pmcids:
+                mf.write(p + "\n")
+        print(f"Missing PMCIDs logged to: {os.path.abspath(missing_file)}")
+    except Exception as e:
+        print(f"Failed to write missing PMCIDs file: {e}")
 
     print(f"\nDone. Success: {ok_count} | Failed: {fail_count} | Output: {os.path.abspath(OUTPUT_DIR)}")
