@@ -10,7 +10,7 @@ import requests
 from tqdm import tqdm
 
 # --------- Config ---------
-CSV_FILE = "SB_publications/SB_publication_PMC.csv"   # <-- adjust if needed
+CSV_FILE = "SB_publication_PMC.csv"   # <-- adjust if needed
 OUTPUT_DIR = "PMC_PDFs"
 NCBI_OA_API_BASE = "https://www.ncbi.nlm.nih.gov/pmc/utils/oa/oa.fcgi?id="
 # Add tool/email for good API citizenship
