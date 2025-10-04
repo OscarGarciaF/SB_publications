@@ -20,7 +20,7 @@ MAX_RETRIES = 3
 RETRY_SLEEP = 2  # seconds
 
 # New: max concurrent requests
-MAX_CONCURRENT = 5
+MAX_CONCURRENT = 10
 # --------------------------
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
